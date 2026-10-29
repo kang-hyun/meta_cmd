@@ -24,7 +24,7 @@ class MfMobileDriverNode(Node):
     def __init__(self):
         super().__init__("mf_mobile_driver")
         defaults = dict(
-            port="/dev/ttyUSB0", baudrate=115200, enable_lift=False,
+            port="/dev/ttyUSB0", baudrate=921600, enable_lift=False,
             cmd_vel_topic="cmd_vel", motor_state_topic="motor_state",
             lift_state_topic="lift_state", lift_target_topic="lift_target",
             control_rate=20.0, cmd_vel_timeout=0.5,

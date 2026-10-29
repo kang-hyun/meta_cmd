@@ -128,7 +128,7 @@ class MfMobileDriver:
     LIFT_STOP, LIFT_UP, LIFT_DOWN, LIFT_HOME = range(4)
     _SIZES = {_STATE_ID: 67, _LIFT_STATE_ID: 33}
 
-    def __init__(self, port="/dev/ttyUSB0", baudrate=115200, wheel_radius=0.12,
+    def __init__(self, port="/dev/ttyUSB0", baudrate=921600, wheel_radius=0.12,
                  wheel_separation=0.70, max_wheel_speed=20.0, enable_lift=False):
         for name, value in (("baudrate", baudrate), ("wheel_radius", wheel_radius),
                             ("wheel_separation", wheel_separation),

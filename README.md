@@ -31,7 +31,7 @@ sudo apt install python3-serial ros-humble-rclpy \
 source /opt/ros/humble/setup.bash
 python3 mf_mobile_driver_node.py --ros-args \
   -p port:=/dev/ttyUSB0 \
-  -p baudrate:=115200 \
+  -p baudrate:=921600 \
   -p require_motor_feedback:=false \
   -p enable_lift:=false \
   -p wheel_radius:=0.12 \
@@ -39,6 +39,8 @@ python3 mf_mobile_driver_node.py --ros-args \
 ```
 
 **좌우 구동륜 간격은 사용자가 알려준 0.70m를 반영했습니다. 반지름 0.12m는 기존 코드의 값이며 아직 실측 확인이 필요합니다.** `wheel_radius`는 하중이 실린 흰색 구동륜의 유효 반지름, `wheel_separation`은 좌·우 흰색 구동륜 중심 간 거리입니다. 앞뒤 빨간 캐스터 간격을 넣는 값이 아닙니다.
+
+**기본 보드레이트는 실제 로봇에서 사용자가 동작을 확인한 921600bps입니다.** `python3 mf_mobile_driver_node.py`만 실행해도 이 값이 적용됩니다. 다른 통신 속도가 필요한 경우 `-p baudrate:=값`으로 지정하십시오.
 
 **이번 수정본의 기본값은 `require_motor_feedback:=false`입니다.** 시리얼 연결 후에는 모터 피드백이 한 번도 없거나 중단되어도 새 `cmd_vel`을 받아 속도 명령을 전송합니다. `/motor_state`를 가짜로 만들지 않으므로 실측값은 비어 있을 수 있습니다. 기존 피드백 필수 동작은 실행 시 `-p require_motor_feedback:=true`로 선택합니다. 이 설정은 시작 시 적용되므로 변경하려면 노드를 재시작하십시오.
 
@@ -139,7 +141,7 @@ ros2 service call driver_reset std_srvs/srv/Trigger "{}"
 | 이름 | 기본값 | 의미 |
 |---|---:|---|
 | `port` | `/dev/ttyUSB0` | 시리얼 장치 |
-| `baudrate` | 115200 | bps |
+| `baudrate` | 921600 | bps, 실제 로봇에서 사용자 동작 확인 |
 | `wheel_radius` | 0.12 | 구동륜 반지름 m, 실측 필요 |
 | `wheel_separation` | 0.70 | 좌우 구동륜 간격 m, 사용자 제공값 |
 | `control_rate` | 20.0 | 제어 주기 Hz |
