@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#13392f"><meta name="description" content="MF 모바일 로봇의 ROS2 상태 확인과 저속 수동 제어를 위한 운용 대시보드">
+  <title>MF Robot Console · 로봇 운용 대시보드</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="styles.css"><script src="app.js" defer></script>
+</head>
+<body>
+<svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+<symbol id="i-robot" viewBox="0 0 24 24"><rect x="5" y="6" width="14" height="14" rx="4"/><path d="M12 3v3M2 11v5m20-5v5M9 16h6"/><path d="M9 11h.01M15 11h.01" stroke-width="3"/></symbol>
+<symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 12h4l3-8 5 16 3-8h5"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="m10 13 4-4m-6 5-2 2a3.5 3.5 0 0 0 5 5l4-4a3.5 3.5 0 0 0 0-5M9 12a3.5 3.5 0 0 1 0-5l4-4a3.5 3.5 0 0 1 5 5l-2 2"/></symbol>
+<symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-15-2 20"/></symbol>
+<symbol id="i-lift" viewBox="0 0 24 24"><path d="M4 20h16M4 4h16M8 17l8-10M8 7l8 10M3 12h3m12 0h3"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 20V4m-6 6 6-6 6 6"/></symbol>
+<symbol id="i-turn" viewBox="0 0 24 24"><path d="M18 20v-7a6 6 0 0 0-6-6H4m5-5L4 7l5 5"/></symbol>
+<symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/></symbol>
+<symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 1 8M3 4v6h6"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+<symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+<symbol id="i-bolt" viewBox="0 0 24 24"><path d="m13 2-9 12h7l-1 8 10-13h-7z"/></symbol>
+</defs></svg>
+<aside class="sidebar">
+  <a class="brand" href="#" aria-label="MF Robot Console 홈"><span class="brand-mark"><svg><use href="#i-robot"/></svg></span><span>MF<span class="brand-light"> Console</span><small>ROBOT OPERATIONS</small></span></a>
+  <div class="workspace"><span class="workspace-icon">M</span><div>모바일 로봇<small>현장 운용 워크스페이스</small></div><span class="tiny-dot"></span></div>
+  <div class="nav-label">WORKSPACE</div>
+  <nav aria-label="주 메뉴">
+    <button class="nav-item active" data-action="dashboard"><svg><use href="#i-grid"/></svg><span>운용 대시보드</span><span class="nav-active-dot"></span></button>
+    <button class="nav-item" data-dialog="logs"><svg><use href="#i-clock"/></svg><span>이벤트 기록</span><span class="nav-count" id="eventCount">0</span></button>
+    <button class="nav-item" data-dialog="topics"><svg><use href="#i-code"/></svg><span>ROS 인터페이스</span></button>
+    <button class="nav-item" data-dialog="lift"><svg><use href="#i-lift"/></svg><span>리프트 제어</span><span class="nav-pill" id="liftPill">OFF</span></button>
+  </nav>
+  <div class="sidebar-help"><div class="help-glyph"><svg><use href="#i-info"/></svg></div><strong>처음 연결하시나요?</strong><p>로봇 PC에서 실행하는 방법을<br>차근차근 확인하세요.</p><button data-dialog="guide">연결 가이드 <svg><use href="#i-chevron"/></svg></button></div>
+  <div class="sidebar-bottom"><div class="avatar">MF</div><div><strong>MF Mobile</strong><small>2WD · 4 Passive Casters</small></div><span class="version">v1.0</span></div>
+</aside>
+<main>
+  <header class="topbar"><div class="breadcrumb">워크스페이스 <span>/</span> <strong>운용 대시보드</strong></div><div class="topbar-right"><span id="clock">--:--:--</span><button class="header-stop" id="headerStop" aria-label="정지 유지 바로가기"><svg><use href="#i-stop"/></svg>정지 유지</button><span class="top-divider"></span><button class="icon-button" id="fullscreen" aria-label="전체 화면"><svg><use href="#i-expand"/></svg></button><span class="user-avatar">운용</span></div></header>
+  <div class="content">
+    <div class="page-heading"><div><div class="eyebrow">MOBILE ROBOT CONTROL</div><h1>로봇 운용 대시보드</h1><p>로봇의 현재 상태를 확인하고, 움직임을 제어하세요.</p></div><button class="button connection-button" data-dialog="connection"><svg><use href="#i-link"/></svg> 연결 및 설정 <svg class="small-icon"><use href="#i-chevron"/></svg></button></div>
+    <div class="mode-banner" id="modeBanner"><span class="banner-icon"><svg><use href="#i-info"/></svg></span><div><strong id="modeTitle">데모 모드</strong><span id="modeDescription">가상 로봇으로 화면과 조작을 체험해보세요. 실제 로봇에는 명령을 보내지 않습니다.</span></div><button data-dialog="guide" id="modeLink">실제 로봇 연결하기 <svg><use href="#i-chevron"/></svg></button></div>
+    <section class="metrics" aria-label="주요 운용 상태">
+      <article class="metric"><div class="metric-label">현재 선속도 <svg><use href="#i-arrow"/></svg></div><div class="metric-value"><span id="linearValue">0.00</span><small>m/s</small></div><div class="metric-bottom"><span class="green-dot"></span><span id="linearNote">엔코더 환산 속도</span><span class="metric-limit">상한 0.30</span></div></article>
+      <article class="metric"><div class="metric-label">현재 회전 속도 <svg><use href="#i-reset"/></svg></div><div class="metric-value"><span id="angularValue">0.00</span><small>rad/s</small></div><div class="metric-bottom"><span class="muted-dot"></span><span>좌·우 바퀴 차이로 환산</span><span class="metric-limit">상한 0.50</span></div></article>
+      <article class="metric"><div class="metric-label">드라이버 상태 <svg><use href="#i-bolt"/></svg></div><div class="metric-value status-value"><span class="status-orb" id="stateOrb"></span><span id="driverState">대기 중</span></div><div class="metric-bottom"><span class="mono" id="stateCode">READY</span><span class="metric-limit" id="serialState">연결 정상</span></div></article>
+      <article class="metric"><div class="metric-label">피드백 수신 경과 <svg><use href="#i-wave"/></svg></div><div class="metric-value"><span id="feedbackAge">—</span><small>ms</small></div><div class="metric-bottom"><span class="green-dot" id="feedbackDot"></span><span id="feedbackNote">최근 모터 상태 기준</span><span class="metric-limit">제한 500</span></div></article>
+    </section>
+    <div class="primary-grid">
+      <section class="panel robot-panel"><div class="panel-header"><div><h2>로봇 상태</h2><span>구동륜 및 캐스터 구성</span></div><span class="badge neutral"><span class="green-dot"></span> MF MOBILE</span></div>
+        <div class="robot-stage">
+          <span class="view-label">TOP VIEW</span><div class="front-label"><svg><use href="#i-arrow"/></svg> FRONT</div>
+          <div class="robot-visual">
+            <svg id="robotSvg" viewBox="0 0 480 270" role="img" aria-label="중앙 좌우 구동륜 두 개와 앞뒤 수동 캐스터 네 개가 있는 로봇 구성도">
+              <defs><linearGradient id="bodyGrad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#e2eae6"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="9" flood-color="#14382c" flood-opacity=".10"/></filter><pattern id="tread" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M0 2h8" stroke="#c3ccc7" stroke-width="2"/></pattern></defs>
+              <path d="M240 24v217" stroke="#c6d8cd" stroke-dasharray="4 6"/>
+              <g class="caster"><rect x="150" y="46" width="26" height="39" rx="9" fill="#bc625b"/><rect x="156" y="48" width="14" height="35" rx="6" fill="#d7857d"/><path d="M145 56h13m10 0h12" stroke="#aab6ad" stroke-width="5"/></g>
+              <g class="caster"><rect x="304" y="46" width="26" height="39" rx="9" fill="#bc625b"/><rect x="310" y="48" width="14" height="35" rx="6" fill="#d7857d"/><path d="M300 56h13m10 0h12" stroke="#aab6ad" stroke-width="5"/></g>
+              <g class="caster"><rect x="150" y="193" width="26" height="39" rx="9" fill="#bc625b"/><rect x="156" y="195" width="14" height="35" rx="6" fill="#d7857d"/><path d="M145 218h13m10 0h12" stroke="#aab6ad" stroke-width="5"/></g>
+              <g class="caster"><rect x="304" y="193" width="26" height="39" rx="9" fill="#bc625b"/><rect x="310" y="195" width="14" height="35" rx="6" fill="#d7857d"/><path d="M300 218h13m10 0h12" stroke="#aab6ad" stroke-width="5"/></g>
+              <g filter="url(#shadow)"><rect x="167" y="48" width="146" height="184" rx="22" fill="url(#bodyGrad)" stroke="#bacdc1" stroke-width="1.5"/><rect x="184" y="67" width="112" height="146" rx="13" fill="#f5f8f5" stroke="#d5dfd8"/><path d="M184 97h112m-112 88h112" stroke="#dce5df"/></g>
+              <circle cx="240" cy="133" r="30" fill="#e0eee6"/><path d="m240 111-14 28h28z" fill="#2b7459"/><path d="M240 133v17" stroke="#2b7459" stroke-width="6" stroke-linecap="round"/>
+              <text x="240" y="176" text-anchor="middle" fill="#6c8376" font-family="Arial,sans-serif" font-size="9" letter-spacing="2">MF MOBILE</text>
+              <g id="leftDrive"><rect x="140" y="108" width="39" height="65" rx="10" fill="#e6e9e5" stroke="#9eafa2" stroke-width="2"/><rect x="144" y="113" width="31" height="55" rx="7" fill="url(#tread)"/><rect x="154" y="108" width="11" height="65" rx="5" fill="#f9faf5"/></g>
+              <g id="rightDrive"><rect x="301" y="108" width="39" height="65" rx="10" fill="#e6e9e5" stroke="#9eafa2" stroke-width="2"/><rect x="305" y="113" width="31" height="55" rx="7" fill="url(#tread)"/><rect x="315" y="108" width="11" height="65" rx="5" fill="#f9faf5"/></g>
+              <path d="M135 140H80m265 0h55" stroke="#a6c6b5" stroke-dasharray="3 4"/>
+              <circle cx="78" cy="140" r="3" fill="#2f8060"/><circle cx="402" cy="140" r="3" fill="#2f8060"/>
+              <path d="M160 247v10m160-10v10m-160-5h160" stroke="#a8bcb0"/>
+              <rect x="208" y="244" width="64" height="17" rx="4" fill="#f4f7f3"/><text id="separationLabel" x="240" y="256" text-anchor="middle" font-size="11" font-family="Arial,sans-serif" fill="#758c7c">0.70 m</text>
+            </svg>
+            <div class="wheel-callout left"><span>LEFT DRIVE</span><strong id="leftWheel">0.00<small>rad/s</small></strong></div>
+            <div class="wheel-callout right"><span>RIGHT DRIVE</span><strong id="rightWheel">0.00<small>rad/s</small></strong></div>
+          </div>
+          <div class="robot-legend"><span><i class="legend-drive"></i>중앙 구동륜 × 2</span><span><i class="legend-caster"></i>수동 캐스터 × 4 <small>각도 미측정</small></span></div>
+        </div>
+        <div class="wheel-table"><div class="wheel-table-head"><span>바퀴 피드백</span><span>LEFT</span><span>RIGHT</span></div><div><span>PWM <small>펌웨어 값</small></span><strong id="leftPwm">—</strong><strong id="rightPwm">—</strong></div><div><span>엔코더 누적 <small>rad</small></span><strong id="leftPosition">0.00</strong><strong id="rightPosition">0.00</strong></div></div>
+      </section>
+      <section class="panel control-panel"><div class="panel-header"><div><h2>수동 주행 제어</h2><span>누르고 있는 동안만 움직여요</span></div><button class="toggle" id="manualToggle" role="switch" aria-checked="false" aria-label="수동 제어 활성화"><span></span></button></div>
+        <div class="control-notice" id="controlNotice"><span class="muted-dot"></span>수동 제어를 켜고 방향 버튼을 누르세요</div>
+        <div class="dpad" aria-label="방향 제어"><span class="key-hint top-key">W / ↑</span><button class="drive-button forward" data-drive="forward" aria-label="전진, 누르고 있기" disabled><svg><use href="#i-arrow"/></svg><span>전진</span></button><button class="drive-button left-turn" data-drive="left" aria-label="제자리 좌회전, 누르고 있기" disabled><svg><use href="#i-turn"/></svg><span>좌회전</span></button><button class="release-button" id="releaseButton" aria-label="일반 정지"><svg><use href="#i-stop"/></svg></button><button class="drive-button right-turn" data-drive="right" aria-label="제자리 우회전, 누르고 있기" disabled><svg><use href="#i-turn"/></svg><span>우회전</span></button><button class="drive-button backward" data-drive="backward" aria-label="후진, 누르고 있기" disabled><svg><use href="#i-arrow"/></svg><span>후진</span></button><span class="key-hint bottom-key">S / ↓</span><span class="key-hint left-key">A / ←</span><span class="key-hint right-key">D / →</span></div>
+        <div class="sliders"><div class="slider-row"><label for="linearSlider">주행 속도</label><output id="linearSetting">0.10 <small>m/s</small></output><input id="linearSlider" type="range" min="0.02" max="0.30" step="0.01" value="0.10"><div class="range-labels"><span>0.02</span><span>0.30 m/s</span></div></div><div class="slider-row"><label for="angularSlider">회전 속도</label><output id="angularSetting">0.20 <small>rad/s</small></output><input id="angularSlider" type="range" min="0.05" max="0.50" step="0.01" value="0.20"><div class="range-labels"><span>0.05</span><span>0.50 rad/s</span></div></div></div>
+        <div class="stop-row"><button class="stop-button" id="stopButton"><svg><use href="#i-stop"/></svg><span>정지 유지</span><kbd>Space</kbd></button><button class="reset-button" id="resetButton" title="오류 해제 및 복구"><svg><use href="#i-reset"/></svg><span>복구</span></button></div><p class="stop-caption">정지 유지 후에는 복구가 필요해요. 물리적 비상정지는 별도입니다.</p>
+      </section>
+    </div>
+    <div class="secondary-grid">
+      <section class="panel chart-panel"><div class="panel-header"><div><h2>속도 모니터링</h2><span>전송 목표와 엔코더 환산 속도</span></div><div class="segmented" aria-label="그래프 표시 시간"><button class="selected" data-range="30">30초</button><button data-range="60">60초</button></div></div><div class="chart-legend"><span><i class="legend-line actual-line"></i>측정 선속도</span><span><i class="legend-line target-line"></i>전송 목표</span><small>m/s</small></div><div class="chart-wrap"><canvas id="speedChart" role="img" aria-label="최근 선속도 추이"></canvas></div></section>
+      <section class="panel events-panel"><div class="panel-header"><div><h2>최근 이벤트</h2><span>연결 및 드라이버 상태 변화</span></div><button class="text-button" data-dialog="logs">전체 보기 <svg><use href="#i-chevron"/></svg></button></div><div class="events-list" id="recentEvents"><div class="empty-events">이벤트를 기다리고 있어요.</div></div></section>
+    </div>
+    <footer class="page-footer"><span><span class="green-dot" id="footerDot"></span><span id="footerConnection">데모 시뮬레이터</span></span><span>구동륜 간격 <strong id="footerSeparation">0.70 m</strong><i>·</i> 명령 타임아웃 <strong>0.5 s</strong></span><button data-dialog="topics">ROS 인터페이스 보기 <svg><use href="#i-chevron"/></svg></button></footer>
+  </div>
+</main>
+<dialog id="drawer" aria-labelledby="drawerTitle"><div class="drawer-header"><div><div class="eyebrow" id="drawerEyebrow">MF ROBOT CONSOLE</div><h2 id="drawerTitle">연결 및 설정</h2></div><button class="icon-button" id="closeDrawer" aria-label="닫기"><svg><use href="#i-close"/></svg></button></div><div id="drawerBody"></div></dialog>
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+</body></html>
