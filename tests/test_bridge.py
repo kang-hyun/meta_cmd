@@ -1,4 +1,4 @@
-"""No ROS/hardware access: command-lease and HTTP boundary regression tests."""
+"""No ROS/hardware access: passive driving monitor, explicit services and HTTP checks."""
 import http.client
 import json
 from pathlib import Path
@@ -15,9 +15,6 @@ class CoreTests(unittest.TestCase):
     def setUp(self):
         self.now = 100.
         self.core = ConsoleCore(clock=lambda: self.now, lift_max=.5)
-        self.ready()
-
-    def ready(self):
         c = self.core
         c.ros_alive = True
         c.publisher_count = 1
@@ -28,200 +25,169 @@ class CoreTests(unittest.TestCase):
         c.update("driver", dict(state="ready", fault="", serial_connected=True, motor_feedback_fresh=True))
         c.update("lift", [0., 100., 33.])
 
-    def arm(self):
-        return self.core.arm("browser-client-one")
+    def test_external_command_is_telemetry_without_manual_speed_cap(self):
+        self.assertTrue(self.core.update("command", [.8, 1.2]))
+        self.assertEqual(self.core.snapshot()['command'], [.8, 1.2])
+        self.assertFalse(self.core.jobs)
 
-    def test_idle_dashboard_does_not_publish_zeros(self):
-        self.assertIsNone(self.core.tick())
-
-    def test_held_command_then_release(self):
-        token = self.arm()
-        self.core.command(token, 1, .1, .2)
-        self.assertEqual(self.core.tick(), (.1, .2))
-        self.core.command(token, 2, 0., 0.)
-        self.assertEqual(self.core.tick(), (0., 0.))
-
-    def test_browser_lost_lease_sends_one_zero(self):
-        token = self.arm()
-        self.core.command(token, 1, .1, 0.)
-        self.now += .36
-        self.assertEqual(self.core.tick(), (0., 0.))
-        self.assertIsNone(self.core.tick())
-        self.assertIsNone(self.core.controller)
-
-    def test_expired_delayed_command_cannot_restart(self):
-        token = self.arm()
-        self.core.command(token, 1, .1, 0.)
-        self.now += .36
-        with self.assertRaises(ControlError):
-            self.core.command(token, 2, .1, 0.)
-        self.assertIsNone(self.core.controller)
-
-    def test_command_reordering_cannot_override_stop(self):
-        token = self.arm()
-        self.core.command(token, 20, 0., 0.)
-        with self.assertRaises(ControlError):
-            self.core.command(token, 19, .3, .5)
-        self.assertEqual(self.core.tick(), (0., 0.))
-
-    def test_previous_session_cannot_override_new_session(self):
-        previous = self.arm()
-        self.core.disarm()
-        current = self.arm()
-        with self.assertRaises(ControlError):
-            self.core.command(previous, 100, .1, 0.)
-        self.core.command(current, 1, 0., 0.)
-
-    def test_other_tab_cannot_take_over(self):
-        self.arm()
-        with self.assertRaises(ControlError):
-            self.core.arm("another-client-id")
-        self.core.disarm(epoch="wrong-epoch")
-        self.assertIsNotNone(self.core.controller)
-
-    def test_stale_motor_blocks_arm(self):
-        self.now += .51
-        with self.assertRaises(ControlError):
-            self.arm()
-
-    def optional_feedback(self):
-        self.core.motor = None
-        self.core.received.pop("motor", None)
-        self.core.update("driver", dict(state="ready", fault="", serial_connected=True,
-                                       motor_feedback_required=False, motor_feedback_fresh=False))
-
-    def test_optional_driver_can_arm_and_command_without_motor(self):
-        self.optional_feedback()
-        token = self.arm()
-        self.core.command(token, 1, .1, 0.)
-        self.assertEqual(self.core.tick(), (.1, 0.))
-        self.assertIsNone(self.core.snapshot()["motor"])
-        self.assertIsNone(self.core.snapshot()["ages"]["motor"])
-
-    def test_optional_stale_motor_no_longer_blocks(self):
-        self.optional_feedback()
-        self.core.update("motor", [1., 0., 0., 1., 0., 0.])
-        self.now += .6
-        self.core.update("driver", self.core.driver)
-        self.assertTrue(self.arm())
-
-    def test_optional_driver_stale_status_still_blocks(self):
-        self.optional_feedback()
-        self.now += 1.3
-        with self.assertRaises(ControlError):
-            self.arm()
-
-    def test_optional_serial_failure_still_blocks(self):
-        self.optional_feedback()
-        self.core.driver["serial_connected"] = False
-        with self.assertRaises(ControlError):
-            self.arm()
-
-    def test_optional_fresh_moving_wheels_still_block(self):
-        self.optional_feedback()
-        self.core.update("motor", [1., 0., 0., 1., 0., 0.])
-        with self.assertRaises(ControlError):
-            self.arm()
-
-    def test_optional_browser_timeout_still_stops(self):
-        self.optional_feedback()
-        token = self.arm()
-        self.core.command(token, 1, .1, 0.)
-        self.now += .36
-        self.assertEqual(self.core.tick(), (0., 0.))
-        self.assertIsNone(self.core.controller)
-
-    def test_feedback_optout_requires_exact_boolean_false(self):
-        self.optional_feedback()
-        for value in (True, "false", None, 0):
-            self.core.driver["motor_feedback_required"] = value
-            with self.assertRaises(ControlError):
-                self.arm()
-
-    def test_optional_does_not_disable_lift_feedback_checks(self):
-        self.optional_feedback()
-        with self.assertRaises(ControlError):
-            self.core.lift_target(.1)
-
-    def test_stale_driver_blocks_arm(self):
-        self.now += 1.3
-        self.core.update("motor", [0.] * 6)
-        with self.assertRaises(ControlError):
-            self.arm()
-
-    def test_fault_blocks_arm(self):
-        self.core.update("driver", dict(state="fault", fault="operator_stop", serial_connected=True, motor_feedback_fresh=True))
-        with self.assertRaises(ControlError):
-            self.arm()
-
-    def test_moving_wheels_block_arm(self):
-        self.core.update("motor", [1., 0., 0., 1., 0., 0.])
-        with self.assertRaises(ControlError):
-            self.arm()
-
-    def test_competing_publisher_latches_driver_stop_when_controlling(self):
-        token = self.arm()
-        self.core.command(token, 1, .1, 0.)
-        self.core.publisher_count = 2
-        self.assertEqual(self.core.tick(), (0., 0.))
-        self.assertEqual(self.core.jobs[0]["name"], "driver_stop")
-        self.assertIsNone(self.core.controller)
-
-    def test_invalid_values_cancel_old_command(self):
-        for bad in (float('nan'), float('inf'), True, '0.1', .31):
-            token = self.arm()
-            with self.assertRaises(ControlError):
-                self.core.command(token, 1, bad, 0.)
-            self.assertIsNone(self.core.controller)
-            self.core.tick()
-
-    def test_invalid_telemetry_does_not_refresh_age(self):
+    def test_invalid_command_does_not_refresh_age(self):
+        self.core.update("command", [.1, 0.])
         self.now += .2
-        self.assertFalse(self.core.update("motor", [float('nan')]*6))
-        self.assertAlmostEqual(self.core.age("motor"), .2)
+        for bad in ([float('nan'), 0.], [True, 0.], [0.], ['0.1', 0.]):
+            self.assertFalse(self.core.update("command", bad))
+        self.assertAlmostEqual(self.core.snapshot()['ages']['command'], .2)
 
-    def test_unavailable_stop_service_still_disarms(self):
-        self.arm()
-        self.core.services["driver_stop"] = False
+    def test_absent_and_old_commands_are_distinguishable_from_zero(self):
+        self.assertIsNone(self.core.snapshot()['ages']['command'])
+        self.core.update("command", [0., 0.])
+        self.now += 2.
+        self.assertEqual(self.core.snapshot()['command'], [0., 0.])
+        self.assertEqual(self.core.snapshot()['ages']['command'], 2.)
+        self.assertFalse(self.core.jobs)
+
+    def test_multiple_publishers_and_feedback_loss_do_not_queue_stop(self):
+        self.core.publisher_count = 3
+        self.now += 3.
+        for _ in range(5):
+            self.core.snapshot()
+        self.assertFalse(self.core.jobs)
+        self.assertFalse(self.core.inflight_services)
+
+    def test_optional_feedback_status(self):
+        self.core.motor = None
+        self.core.received.pop('motor')
+        self.core.update('driver', dict(state='ready', fault='', serial_connected=True, motor_feedback_required=False))
+        self.assertEqual(self.core.reason(), '')
+        self.assertIsNone(self.core.snapshot()['motor'])
+
+    def test_required_feedback_status(self):
+        self.now += .6
+        self.assertIn('피드백', self.core.reason())
+
+    def test_stop_is_requested_only_explicitly(self):
+        self.core.snapshot()
+        self.assertFalse(self.core.jobs)
+        self.core.request_service('driver_stop')
+        self.assertEqual(self.core.jobs[0]['name'], 'driver_stop')
+        self.assertEqual(len(self.core.jobs), 1)
+
+    def test_unavailable_service_is_not_queued(self):
+        self.core.services['driver_stop'] = False
         with self.assertRaises(ControlError):
-            self.core.request_service("driver_stop")
-        self.assertEqual(self.core.tick(), (0., 0.))
+            self.core.request_service('driver_stop')
+        self.assertFalse(self.core.jobs)
 
     def test_unknown_service_not_queued(self):
         with self.assertRaises(ControlError):
-            self.core.request_service("anything")
+            self.core.request_service('anything')
         self.assertFalse(self.core.jobs)
 
     def test_service_unknown_outcome_cannot_be_retried(self):
-        job = self.core.request_service("lift_set_home")
-        self.core.finish(job, False, "unknown", unknown=True)
+        job = self.core.request_service('driver_stop')
+        self.core.finish(job, False, 'unknown', unknown=True)
         with self.assertRaises(ControlError):
-            self.core.request_service("lift_set_home")
-        self.core.finish(job, True, "completed")
-        self.assertTrue(self.core.request_service("lift_set_home"))
+            self.core.request_service('driver_stop')
+        self.core.finish(job, True, 'completed')
+        self.assertTrue(self.core.request_service('driver_stop'))
 
-    def test_lift_requires_homed_and_range(self):
+    def test_lift_requires_homed_range_and_stopped_wheels(self):
+        for bad in (.6, -.1, float('nan'), True):
+            with self.assertRaises(ControlError):
+                self.core.lift_target(bad)
+        self.assertTrue(self.core.lift_target(.1))
+        self.core.update('motor', [1., 0., 0., 1., 0., 0.])
         with self.assertRaises(ControlError):
-            self.core.lift_target(.6)
-        self.core.update("lift", [0., 100., 1.])
-        with self.assertRaises(ControlError):
-            self.core.lift_target(.3)
-        self.core.update("lift", [0., 100., 33.])
-        self.assertTrue(self.core.lift_target(.3))
-
-    def test_lift_rejects_moving_wheels_or_fault(self):
-        self.core.update("motor", [.2, 0., 0., .2, 0., 0.])
-        with self.assertRaises(ControlError):
-            self.core.request_service("lift_set_home")
-        self.core.update("motor", [0.] * 6)
-        self.core.update("lift", [0., 100., 41.])
+            self.core.request_service('lift_set_home')
+        self.core.update('motor', [0.] * 6)
+        self.core.update('lift', [0., 100., 1.])
         with self.assertRaises(ControlError):
             self.core.lift_target(.1)
+        self.core.update('lift', [0., 100., 41.])
+        with self.assertRaises(ControlError):
+            self.core.request_service('lift_set_home')
 
     def test_snapshot_geometry_and_json(self):
         snapshot = self.core.snapshot()
         self.assertEqual(snapshot['config']['wheel_separation'], .7)
+        self.assertTrue(snapshot['publishers_fresh'])
+        self.assertNotIn('manual_allowed', snapshot)
         json.dumps(snapshot, allow_nan=False)
+
+
+class ROSInterfaceTests(unittest.TestCase):
+    """Exercise the adapter against fake ROS endpoints, with no real robot."""
+    def setUp(self):
+        import types
+        from unittest.mock import patch
+        from ros_dashboard_bridge import make_ros_node
+        self.now = 100.
+        self.core = ConsoleCore(clock=lambda: self.now)
+        self.publishers = []
+        self.clients = []
+        outer = self
+
+        class FakeNode:
+            def __init__(self, name):
+                self.publisher_count = 2
+            def create_publisher(self, kind, topic, qos):
+                pub = types.SimpleNamespace(topic_name='/robot/' + topic, values=[])
+                pub.publish = pub.values.append
+                outer.publishers.append((kind, topic, pub))
+                return pub
+            def create_subscription(self, kind, topic, callback, qos):
+                return types.SimpleNamespace(topic_name='/robot/' + topic, callback=callback)
+            def create_client(self, kind, name):
+                client = types.SimpleNamespace(name=name, calls=[], service_is_ready=lambda: True)
+                def call(request):
+                    client.calls.append(request)
+                    return types.SimpleNamespace(done=lambda: True, result=lambda: types.SimpleNamespace(success=True, message='ok'))
+                client.call_async = call
+                outer.clients.append(client)
+                return client
+            def create_timer(self, period, callback):
+                return types.SimpleNamespace(callback=callback)
+            def count_publishers(self, topic):
+                outer.counted_topic = topic
+                return self.publisher_count
+
+        modules = {
+            'rclpy': types.ModuleType('rclpy'),
+            'rclpy.node': types.SimpleNamespace(Node=FakeNode),
+            'rclpy.qos': types.SimpleNamespace(QoSProfile=lambda **kw: kw, ReliabilityPolicy=types.SimpleNamespace(BEST_EFFORT=1), DurabilityPolicy=types.SimpleNamespace(VOLATILE=1)),
+            'geometry_msgs.msg': types.SimpleNamespace(Twist=type('Twist', (), {})),
+            'std_msgs.msg': types.SimpleNamespace(String=type('String', (), {}), Float64=type('Float64', (), {}), Float64MultiArray=type('Float64MultiArray', (), {})),
+            'std_srvs.srv': types.SimpleNamespace(Trigger=types.SimpleNamespace(Request=lambda: object())),
+        }
+        self.patch = patch.dict(sys.modules, modules)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+        self.node = make_ros_node(self.core)
+
+    def test_no_velocity_publisher_or_automatic_stop(self):
+        for _ in range(4):
+            self.node.update()
+            self.now += 1.
+        self.assertEqual([topic for _, topic, _ in self.publishers], ['lift_target'])
+        self.assertFalse(any(pub.values for _, _, pub in self.publishers))
+        self.assertFalse(any(client.calls for client in self.clients))
+        self.assertEqual(self.counted_topic, '/robot/cmd_vel')
+        self.assertEqual(self.core.publisher_count, 2)
+
+    def test_external_twist_subscription_and_resolved_topic(self):
+        import types
+        self.node.telemetry_subs['cmd_vel'].callback(types.SimpleNamespace(linear=types.SimpleNamespace(x=.7), angular=types.SimpleNamespace(z=1.)))
+        self.assertEqual(self.core.snapshot()['command'], [.7, 1.])
+        self.assertEqual(self.core.topics['cmd_vel'], '/robot/cmd_vel')
+        self.node.update()
+        self.assertFalse(any(client.calls for client in self.clients))
+
+    def test_explicit_stop_and_reset_services_still_work(self):
+        self.node.update()
+        for name in ('driver_stop', 'driver_reset'):
+            self.core.request_service(name)
+            self.node.update()
+            self.assertEqual(len(next(c for c in self.clients if c.name == name).calls), 1)
+            self.assertEqual(self.core.results[0]['status'], 'success')
 
 
 class HTTPTests(unittest.TestCase):
@@ -269,11 +235,13 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.request('GET','/../ros_dashboard_bridge.py')[0], 404)
         self.assertEqual(self.request('POST','/api/exec',{}, {'Content-Type':'application/json','X-Console-Token':'test-csrf-token'})[0], 404)
 
-    def test_command_rejected_without_valid_session(self):
-        self.assertEqual(self.request('POST','/api/command',{'epoch':'bad','seq':1,'linear':.1,'angular':0}, {'Content-Type':'application/json','X-Console-Token':'test-csrf-token'})[0], 400)
+    def test_driving_endpoints_are_removed_even_with_valid_csrf(self):
+        for path in ('arm', 'command', 'disarm'):
+            self.assertEqual(self.request('POST','/api/' + path, {'linear':.1,'angular':0}, {'Content-Type':'application/json','X-Console-Token':'test-csrf-token'})[0], 404)
+        self.assertFalse(self.core.jobs)
 
     def test_malformed_body_rejected(self):
-        self.assertEqual(self.request('POST','/api/command',[], {'Content-Type':'application/json','X-Console-Token':'test-csrf-token'})[0], 400)
+        self.assertEqual(self.request('POST','/api/service',[], {'Content-Type':'application/json','X-Console-Token':'test-csrf-token'})[0], 400)
 
 
 if __name__ == '__main__':

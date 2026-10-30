@@ -15,7 +15,7 @@
 | `mf_mobile_driver.py` | 기존 MFPacket 통신 + 출발/가감속/역회전 프로파일 |
 | `mf_mobile_driver_node.py` | ROS2 연결, 피드백 감시, 장애·복구, 리프트 처리 |
 | `CHANGELOG.md` | 기존 코드와의 변경점 및 검증 범위 |
-| `ros_dashboard_bridge.py`, `dist/` | ROS2 관제 브리지와 브라우저 화면 |
+| `ros_dashboard_bridge.py`, `dist/` | 주행 명령·피드백 모니터링, 정지·복구 화면 |
 | `DASHBOARD.md` | 관제 실행·접속·조작 안내 |
 | `tests/test_bridge.py` | 관제 브리지 모의 시험 |
 | `tests/test_driver.py` | ROS2·실물 장치 없이 실행하는 모의 시험 |

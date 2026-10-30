@@ -18,23 +18,17 @@ class ControlError(ValueError):
 
 
 class ConsoleCore:
-    """Thread-safe command lease and telemetry; ROS is owned by one executor."""
+    """Thread-safe telemetry and explicit services; no driving commands are published."""
     def __init__(self, clock=time.monotonic, radius=.12, separation=.70, lift_max=0.):
         self.clock = clock
         self.lock = threading.RLock()
         self.radius, self.separation, self.lift_max = radius, separation, lift_max
-        self.motor = self.applied = self.lift = self.driver = None
+        self.motor = self.applied = self.command = self.lift = self.driver = None
         self.received = {}
         self.ros_alive = False
         self.publisher_count = None
         self.graph_at = None
         self.services = {}
-        self.controller = None
-        self.epoch = None
-        self.sequence = -1
-        self.deadline = 0.
-        self.target = (0., 0.)
-        self.zero_pending = False
         self.jobs = deque()
         self.results = deque(maxlen=30)
         self.inflight_services = {}
@@ -51,8 +45,8 @@ class ConsoleCore:
 
     def update(self, topic, value):
         with self.lock:
-            if topic in ("motor", "applied", "lift"):
-                expected = {"motor": 6, "applied": 2, "lift": 3}[topic]
+            if topic in ("motor", "applied", "command", "lift"):
+                expected = {"motor": 6, "applied": 2, "command": 2, "lift": 3}[topic]
                 if len(value) != expected or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in value):
                     return False
             if topic == "driver":
@@ -85,81 +79,7 @@ class ConsoleCore:
         if self.feedback_required() and (not self.motor_fresh()
                 or self.driver.get("motor_feedback_fresh") is not True):
             return "모터 피드백이 없거나 오래되었어요"
-        if self.graph_at is None or self.clock() - self.graph_at > 2.:
-            return "ROS 발행기 확인을 기다리고 있어요"
-        if self.publisher_count != 1:
-            return "다른 cmd_vel 발행기를 종료하세요" if self.publisher_count and self.publisher_count > 1 else "속도 발행기가 준비되지 않았어요"
         return ""
-
-    def arm(self, client):
-        with self.lock:
-            if not isinstance(client, str) or not 8 <= len(client) <= 100:
-                raise ControlError("invalid_client")
-            self._expire()
-            if self.controller:
-                raise ControlError("다른 제어 세션이 사용 중이에요")
-            reason = self.reason()
-            if reason:
-                raise ControlError(reason)
-            if self.motor_fresh() and max(abs(self.motor[0]), abs(self.motor[3])) > .10:
-                raise ControlError("바퀴가 정지한 뒤 수동 제어를 켜세요")
-            self.controller = client
-            self.epoch = secrets.token_urlsafe(24)
-            self.deadline = self.clock() + .5
-            self.sequence = -1
-            self.target = (0., 0.)
-            self.event("수동 제어 시작" if self.motor_fresh()
-                       else "수동 제어 시작 · 모터 피드백 없음 / 실제 정지 미확인",
-                       "info" if self.motor_fresh() else "warning")
-            return self.epoch
-
-    def command(self, epoch, seq, linear, angular):
-        with self.lock:
-            self._expire()
-            if not self.epoch or not isinstance(epoch, str) or not secrets.compare_digest(self.epoch, epoch):
-                raise ControlError("제어 세션이 종료되었어요. 수동 제어를 다시 켜세요")
-            if not isinstance(seq, int) or isinstance(seq, bool) or seq <= self.sequence:
-                raise ControlError("old_command")
-            if any(isinstance(v, bool) or not isinstance(v, (float, int)) or not math.isfinite(v) for v in (linear, angular)):
-                self.disarm("잘못된 속도 명령으로 제어 해제")
-                raise ControlError("invalid_velocity")
-            if abs(linear) > .3 or abs(angular) > .5:
-                self.disarm("속도 제한 초과로 제어 해제")
-                raise ControlError("velocity_limit")
-            reason = self.reason()
-            if reason:
-                self.disarm(reason)
-                raise ControlError(reason)
-            self.sequence = seq
-            self.target = (float(linear), float(angular))
-            self.deadline = self.clock() + .35
-
-    def disarm(self, reason="수동 제어 해제", epoch=None):
-        with self.lock:
-            if epoch is not None and epoch != self.epoch:
-                return
-            if self.controller:
-                self.zero_pending = True
-                self.event(reason)
-            self.controller = self.epoch = None
-            self.target = (0., 0.)
-
-    def _expire(self):
-        if self.controller and self.clock() > self.deadline:
-            self.disarm("조작 신호가 끊겨 수동 제어를 해제했어요", )
-
-    def tick(self):
-        with self.lock:
-            self._expire()
-            if self.controller and self.reason():
-                reason = self.reason()
-                if self.publisher_count and self.publisher_count > 1:
-                    self._queue_service("driver_stop")
-                self.disarm(reason)
-            if self.zero_pending:
-                self.zero_pending = False
-                return (0., 0.)
-            return self.target if self.controller else None
 
     def _queue_service(self, name):
         for job_id, existing in self.inflight_services.items():
@@ -175,7 +95,6 @@ class ConsoleCore:
         with self.lock:
             if name not in ("driver_stop", "driver_reset", "lift_set_home", "lift_stop"):
                 raise ControlError("unknown_service")
-            self.disarm("서비스 요청으로 수동 제어 해제")
             if not self.services.get(name):
                 raise ControlError("ROS 서비스가 연결되지 않았어요")
             if name == "lift_set_home":
@@ -199,7 +118,6 @@ class ConsoleCore:
 
     def lift_target(self, height):
         with self.lock:
-            self.disarm("리프트 요청으로 수동 제어 해제")
             self._check_lift()
             if not isinstance(height, (float, int)) or isinstance(height, bool) or not math.isfinite(height) or not 0 <= height <= self.lift_max:
                 raise ControlError("목표 높이가 허용 범위를 벗어났어요")
@@ -224,12 +142,11 @@ class ConsoleCore:
 
     def snapshot(self):
         with self.lock:
-            self._expire()
-            ages = {name: self.age(name) for name in ("motor", "driver", "applied", "lift")}
+            ages = {name: self.age(name) for name in ("motor", "driver", "applied", "command", "lift")}
             return dict(mode="live", ros_alive=self.ros_alive, driver=self.driver,
-                        motor=self.motor, applied=self.applied, lift=self.lift, ages=ages,
-                        manual_allowed=not bool(self.reason()), blocked_reason=self.reason(),
-                        controller=self.controller, services=self.services.copy(),
+                        motor=self.motor, applied=self.applied, command=self.command, lift=self.lift, ages=ages,
+                        blocked_reason=self.reason(), services=self.services.copy(),
+                        publishers_fresh=self.graph_at is not None and self.clock() - self.graph_at <= 2.,
                         publisher_count=self.publisher_count, topics=self.topics.copy(),
                         config=dict(wheel_radius=self.radius, wheel_separation=self.separation, lift_max_height=self.lift_max),
                         events=list(self.events), results=[dict(r) for r in self.results])
@@ -246,23 +163,25 @@ def make_ros_node(core):
     class BridgeNode(Node):
         def __init__(self):
             super().__init__("mf_robot_console")
-            self.cmd_pub = self.create_publisher(Twist, "cmd_vel", 1)
             self.lift_pub = self.create_publisher(Float64, "lift_target", 1)
             telemetry = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT,
                                    durability=DurabilityPolicy.VOLATILE)
-            self.create_subscription(Float64MultiArray, "motor_state", lambda m: core.update("motor", list(m.data)), telemetry)
-            self.create_subscription(Float64MultiArray, "lift_state", lambda m: core.update("lift", list(m.data)), telemetry)
-            self.create_subscription(Twist, "cmd_vel_applied", lambda m: core.update("applied", [m.linear.x, m.angular.z]), telemetry)
-            self.create_subscription(String, "driver_status", self.on_status, telemetry)
+            self.telemetry_subs = {
+                "cmd_vel": self.create_subscription(Twist, "cmd_vel", lambda m: core.update("command", [m.linear.x, m.angular.z]), telemetry),
+                "motor_state": self.create_subscription(Float64MultiArray, "motor_state", lambda m: core.update("motor", list(m.data)), telemetry),
+                "lift_state": self.create_subscription(Float64MultiArray, "lift_state", lambda m: core.update("lift", list(m.data)), telemetry),
+                "cmd_vel_applied": self.create_subscription(Twist, "cmd_vel_applied", lambda m: core.update("applied", [m.linear.x, m.angular.z]), telemetry),
+                "driver_status": self.create_subscription(String, "driver_status", self.on_status, telemetry),
+            }
             self.clients = {name: self.create_client(Trigger, name) for name in ("driver_stop", "driver_reset", "lift_set_home", "lift_stop")}
             self.pending = {}
             self.graph_time = 0.
             self.timer = self.create_timer(.05, self.update)
             with core.lock:
-                prefix = self.get_namespace().rstrip("/")
-                core.topics = {name: prefix + "/" + name for name in ("cmd_vel", "motor_state", "cmd_vel_applied", "driver_status", "lift_target", "lift_state")}
+                core.topics = {name: sub.topic_name for name, sub in self.telemetry_subs.items()}
+                core.topics["lift_target"] = self.lift_pub.topic_name
                 core.ros_alive = True
-                core.event("ROS2 브리지 시작 · 모터 피드백 대기")
+                core.event("ROS2 모니터링 시작 · 주행 명령은 외부에서 발행")
 
         def on_status(self, msg):
             try:
@@ -270,22 +189,14 @@ def make_ros_node(core):
             except (ValueError, TypeError):
                 pass
 
-        def publish_velocity(self, values):
-            msg = Twist()
-            msg.linear.x, msg.angular.z = values
-            self.cmd_pub.publish(msg)
-
         def update(self):
             now = core.clock()
             if now - self.graph_time >= .5:
                 with core.lock:
-                    core.publisher_count = self.count_publishers(self.cmd_pub.topic_name)
+                    core.publisher_count = self.count_publishers(self.telemetry_subs["cmd_vel"].topic_name)
                     core.graph_at = now
                     core.services = {name: client.service_is_ready() for name, client in self.clients.items()}
                 self.graph_time = now
-            output = core.tick()
-            if output is not None:
-                self.publish_velocity(output)
             with core.lock:
                 jobs = list(core.jobs)
                 core.jobs.clear()
@@ -387,16 +298,6 @@ def handler_factory(core, static_dir, port, csrf_token):
                 if not isinstance(data, dict):
                     raise ControlError("invalid_body")
                 path = urlsplit(self.path).path
-                if path == "/api/arm":
-                    return self.respond(200, {"epoch": core.arm(data.get("client"))})
-                if path == "/api/command":
-                    core.command(data.get("epoch"), data.get("seq"), data.get("linear"), data.get("angular"))
-                    return self.respond(200, {"ok": True})
-                if path == "/api/disarm":
-                    if not isinstance(data.get("epoch"), str):
-                        raise ControlError("epoch_required")
-                    core.disarm(epoch=data["epoch"])
-                    return self.respond(200, {"ok": True})
                 if path == "/api/service":
                     return self.respond(202, {"job_id": core.request_service(data.get("name"))})
                 if path == "/api/lift-target":
@@ -430,21 +331,14 @@ def main():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     print(f"MF Robot Console: http://127.0.0.1:{args.port}")
-    print("실제 제어 모드 / 동일 PC 전용 / 기존 mf_mobile_driver_node.py를 별도 실행하세요")
+    print("주행 모니터링 / 동일 PC 전용 / 드라이버와 teleop을 별도 실행하세요")
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         with core.lock:
-            owned = core.controller is not None or core.zero_pending
-            core.disarm("브리지 종료")
             core.ros_alive = False
-        if owned and rclpy.ok():
-            try:
-                node.publish_velocity((0., 0.))
-            except Exception:
-                pass
         server.shutdown()
         server.server_close()
         node.destroy_node()

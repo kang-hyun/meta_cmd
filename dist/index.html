@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#13392f"><meta name="description" content="MF 모바일 로봇의 ROS2 상태 확인과 저속 수동 제어를 위한 운용 대시보드">
+  <meta name="theme-color" content="#13392f"><meta name="description" content="MF 모바일 로봇의 ROS2 주행 명령과 모터 피드백을 확인하는 운용 대시보드">
   <title>MF Robot Console · 로봇 운용 대시보드</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="styles.css"><script src="app.js" defer></script>
 </head>
@@ -43,11 +43,11 @@
 <main>
   <header class="topbar"><div class="breadcrumb">워크스페이스 <span>/</span> <strong>운용 대시보드</strong></div><div class="topbar-right"><span id="clock">--:--:--</span><button class="header-stop" id="headerStop" aria-label="정지 유지 바로가기"><svg><use href="#i-stop"/></svg>정지 유지</button><span class="top-divider"></span><button class="icon-button" id="fullscreen" aria-label="전체 화면"><svg><use href="#i-expand"/></svg></button><span class="user-avatar">운용</span></div></header>
   <div class="content">
-    <div class="page-heading"><div><div class="eyebrow">MOBILE ROBOT CONTROL</div><h1>로봇 운용 대시보드</h1><p>로봇의 현재 상태를 확인하고, 움직임을 제어하세요.</p></div><button class="button connection-button" data-dialog="connection"><svg><use href="#i-link"/></svg> 연결 및 설정 <svg class="small-icon"><use href="#i-chevron"/></svg></button></div>
-    <div class="mode-banner" id="modeBanner"><span class="banner-icon"><svg><use href="#i-info"/></svg></span><div><strong id="modeTitle">데모 모드</strong><span id="modeDescription">가상 로봇으로 화면과 조작을 체험해보세요. 실제 로봇에는 명령을 보내지 않습니다.</span></div><button data-dialog="guide" id="modeLink">실제 로봇 연결하기 <svg><use href="#i-chevron"/></svg></button></div>
+    <div class="page-heading"><div><div class="eyebrow">MOBILE ROBOT MONITOR</div><h1>로봇 운용 대시보드</h1><p>주행 명령과 모터 피드백을 실시간으로 확인하세요.</p></div><button class="button connection-button" data-dialog="connection"><svg><use href="#i-link"/></svg> 연결 및 설정 <svg class="small-icon"><use href="#i-chevron"/></svg></button></div>
+    <div class="mode-banner" id="modeBanner"><span class="banner-icon"><svg><use href="#i-info"/></svg></span><div><strong id="modeTitle">데모 모드</strong><span id="modeDescription">가상 외부 명령과 피드백을 재생합니다. 실제 로봇에는 연결되지 않습니다.</span></div><button data-dialog="guide" id="modeLink">실제 로봇 연결하기 <svg><use href="#i-chevron"/></svg></button></div>
     <section class="metrics" aria-label="주요 운용 상태">
-      <article class="metric"><div class="metric-label">현재 선속도 <svg><use href="#i-arrow"/></svg></div><div class="metric-value"><span id="linearValue">0.00</span><small>m/s</small></div><div class="metric-bottom"><span class="green-dot"></span><span id="linearNote">엔코더 환산 속도</span><span class="metric-limit">상한 0.30</span></div></article>
-      <article class="metric"><div class="metric-label">현재 회전 속도 <svg><use href="#i-reset"/></svg></div><div class="metric-value"><span id="angularValue">0.00</span><small>rad/s</small></div><div class="metric-bottom"><span class="muted-dot"></span><span>좌·우 바퀴 차이로 환산</span><span class="metric-limit">상한 0.50</span></div></article>
+      <article class="metric"><div class="metric-label">현재 선속도 <svg><use href="#i-arrow"/></svg></div><div class="metric-value"><span id="linearValue">0.00</span><small>m/s</small></div><div class="metric-bottom"><span class="green-dot"></span><span id="linearNote">엔코더 환산 속도</span></div></article>
+      <article class="metric"><div class="metric-label">현재 회전 속도 <svg><use href="#i-reset"/></svg></div><div class="metric-value"><span id="angularValue">0.00</span><small>rad/s</small></div><div class="metric-bottom"><span class="muted-dot"></span><span>좌·우 바퀴 차이로 환산</span></div></article>
       <article class="metric"><div class="metric-label">드라이버 상태 <svg><use href="#i-bolt"/></svg></div><div class="metric-value status-value"><span class="status-orb" id="stateOrb"></span><span id="driverState">대기 중</span></div><div class="metric-bottom"><span class="mono" id="stateCode">READY</span><span class="metric-limit" id="serialState">연결 정상</span></div></article>
       <article class="metric"><div class="metric-label">피드백 수신 경과 <svg><use href="#i-wave"/></svg></div><div class="metric-value"><span id="feedbackAge">—</span><small>ms</small></div><div class="metric-bottom"><span class="green-dot" id="feedbackDot"></span><span id="feedbackNote">최근 모터 상태 기준</span><span class="metric-limit">제한 500</span></div></article>
     </section>
@@ -80,11 +80,12 @@
         </div>
         <div class="wheel-table"><div class="wheel-table-head"><span>바퀴 피드백</span><span>LEFT</span><span>RIGHT</span></div><div><span>PWM <small>펌웨어 값</small></span><strong id="leftPwm">—</strong><strong id="rightPwm">—</strong></div><div><span>엔코더 누적 <small>rad</small></span><strong id="leftPosition">0.00</strong><strong id="rightPosition">0.00</strong></div></div>
       </section>
-      <section class="panel control-panel"><div class="panel-header"><div><h2>수동 주행 제어</h2><span>누르고 있는 동안만 움직여요</span></div><button class="toggle" id="manualToggle" role="switch" aria-checked="false" aria-label="수동 제어 활성화"><span></span></button></div>
-        <div class="control-notice" id="controlNotice"><span class="muted-dot"></span>수동 제어를 켜고 방향 버튼을 누르세요</div>
-        <div class="dpad" aria-label="방향 제어"><span class="key-hint top-key">W / ↑</span><button class="drive-button forward" data-drive="forward" aria-label="전진, 누르고 있기" disabled><svg><use href="#i-arrow"/></svg><span>전진</span></button><button class="drive-button left-turn" data-drive="left" aria-label="제자리 좌회전, 누르고 있기" disabled><svg><use href="#i-turn"/></svg><span>좌회전</span></button><button class="release-button" id="releaseButton" aria-label="일반 정지"><svg><use href="#i-stop"/></svg></button><button class="drive-button right-turn" data-drive="right" aria-label="제자리 우회전, 누르고 있기" disabled><svg><use href="#i-turn"/></svg><span>우회전</span></button><button class="drive-button backward" data-drive="backward" aria-label="후진, 누르고 있기" disabled><svg><use href="#i-arrow"/></svg><span>후진</span></button><span class="key-hint bottom-key">S / ↓</span><span class="key-hint left-key">A / ←</span><span class="key-hint right-key">D / →</span></div>
-        <div class="sliders"><div class="slider-row"><label for="linearSlider">주행 속도</label><output id="linearSetting">0.10 <small>m/s</small></output><input id="linearSlider" type="range" min="0.02" max="0.30" step="0.01" value="0.10"><div class="range-labels"><span>0.02</span><span>0.30 m/s</span></div></div><div class="slider-row"><label for="angularSlider">회전 속도</label><output id="angularSetting">0.20 <small>rad/s</small></output><input id="angularSlider" type="range" min="0.05" max="0.50" step="0.01" value="0.20"><div class="range-labels"><span>0.05</span><span>0.50 rad/s</span></div></div></div>
-        <div class="stop-row"><button class="stop-button" id="stopButton"><svg><use href="#i-stop"/></svg><span>정지 유지</span><kbd>Space</kbd></button><button class="reset-button" id="resetButton" title="오류 해제 및 복구"><svg><use href="#i-reset"/></svg><span>복구</span></button></div><p class="stop-caption">정지 유지 후에는 복구가 필요해요. 물리적 비상정지는 별도입니다.</p>
+      <section class="panel control-panel"><div class="panel-header"><div><h2>주행 명령 모니터</h2><span>teleop 등 외부에서 받은 명령</span></div><span class="badge neutral">MONITOR</span></div>
+        <div class="monitor-status"><span class="green-dot"></span><span id="commandState">외부 주행 명령 대기</span></div>
+        <div class="command-grid"><div><span>입력 선속도</span><strong id="commandLinear">—</strong><small>m/s</small></div><div><span>입력 각속도</span><strong id="commandAngular">—</strong><small>rad/s</small></div></div>
+        <div class="monitor-details"><div><span>드라이버 전송 목표</span><strong><span id="appliedLinear">—</span> m/s · <span id="appliedAngular">—</span> rad/s</strong></div><div><span>명령 수신 경과</span><strong id="commandAge">미수신</strong></div><div><span>외부 cmd_vel 발행기</span><strong id="publisherCount">—</strong></div></div>
+        <p class="monitor-hint" id="publisherNote">teleop 등 외부 프로그램에서 주행을 조작하세요.</p>
+        <div class="stop-row"><button class="stop-button" id="stopButton"><svg><use href="#i-stop"/></svg><span>정지 유지</span></button><button class="reset-button" id="resetButton" title="오류 해제 및 복구"><svg><use href="#i-reset"/></svg><span>복구</span></button></div><p class="stop-caption">복구 전 teleop 명령을 멈추세요. 물리적 비상정지는 별도입니다.</p>
       </section>
     </div>
     <div class="secondary-grid">
