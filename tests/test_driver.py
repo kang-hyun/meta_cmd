@@ -228,7 +228,10 @@ class TransportTests(unittest.TestCase):
 
 class MotionTests(unittest.TestCase):
     def test_startup_cap_and_acceleration(self):
-        p = CasterMotionProfile(MotionConfig())
+        p = CasterMotionProfile(MotionConfig(
+            max_linear_speed=1., startup_duration=0.8, startup_linear_speed=0.08,
+            startup_angular_speed=0.2, wheel_acceleration=2., wheel_deceleration=4.,
+            reversal_pause=0.2, forward_yaw_per_meter=0., reverse_yaw_per_meter=0.))
         previous = 0.
         for i in range(17):
             left, right = p.step(.3, 0., i * .05, .05, True)
@@ -237,15 +240,41 @@ class MotionTests(unittest.TestCase):
             self.assertEqual(left, right)
             previous = left
 
+    def test_forward_and_reverse_yaw_trims_are_independent(self):
+        fast = dict(wheel_acceleration=1000., wheel_deceleration=1000.,
+                    startup_duration=0.001, startup_linear_speed=1.,
+                    startup_angular_speed=1., reversal_pause=0.001)
+
+        def settle(profile, linear):
+            left = right = 0.
+            for i in range(5):
+                left, right = profile.step(linear, 0., i * .05, .05, True)
+            return left, right
+
+        forward_only = CasterMotionProfile(MotionConfig(
+            forward_yaw_per_meter=0.1, reverse_yaw_per_meter=0., **fast))
+        left, right = settle(forward_only, 0.5)
+        self.assertGreater(left, right)
+        left, right = settle(forward_only, -0.5)
+        self.assertAlmostEqual(left, right)
+
+        reverse_only = CasterMotionProfile(MotionConfig(
+            forward_yaw_per_meter=0., reverse_yaw_per_meter=0.2, **fast))
+        left, right = settle(reverse_only, 0.5)
+        self.assertAlmostEqual(left, right)
+        left, right = settle(reverse_only, -0.5)
+        self.assertLess(left, right)
+
     def test_arc_ratio_preserved_at_launch(self):
-        p = CasterMotionProfile(MotionConfig())
+        p = CasterMotionProfile(MotionConfig(
+            forward_yaw_per_meter=0., reverse_yaw_per_meter=0.))
         for i in range(30):
             left, right = p.step(.2, .2, i * .05, .05, True)
             if abs(right) > 1e-9:
                 self.assertAlmostEqual(left / right, (.2 - .2 * .35) / (.2 + .2 * .35))
 
     def test_reverse_requires_measured_stop_and_pause(self):
-        p = CasterMotionProfile(MotionConfig())
+        p = CasterMotionProfile(MotionConfig(reversal_pause=0.2, wheel_deceleration=4.))
         for i in range(50):
             p.step(.2, 0., i * .05, .05, True)
         for i in range(50, 100):
@@ -265,7 +294,7 @@ class MotionTests(unittest.TestCase):
         self.assertEqual(p.step(-.3, 0., 2.05, .05, False), (0., 0.))
 
     def test_random_commands_respect_wheel_rate_and_speed_limits(self):
-        p = CasterMotionProfile(MotionConfig())
+        p = CasterMotionProfile(MotionConfig(wheel_acceleration=2., wheel_deceleration=4.))
         rng = random.Random(761)
         previous = (0., 0.)
         for i in range(2000):
@@ -342,7 +371,7 @@ class NodeTests(unittest.TestCase):
         self.assertFalse(self.node._require_motor_feedback)
         self.move_without_feedback()
         self.assertGreater(self.output()[0], 0.)
-        self.assertEqual(self.output()[0], self.output()[1])
+        self.assertGreater(self.output()[0], self.output()[1])
         self.assertFalse(self.node._fault)
 
     def test_ten_hz_commands_without_feedback_reach_requested_speed(self):
@@ -351,7 +380,7 @@ class NodeTests(unittest.TestCase):
             if step % 2 == 0:
                 self.command(.1)
             self.tick(motor_packet=None)
-        self.assertAlmostEqual(self.output()[0] * .12, .1)
+        self.assertAlmostEqual((self.output()[0] + self.output()[1]) * .5 * .12, .1)
         self.assertEqual(self.node._cmd_received, 30)
         self.assertEqual(self.node._cmd_accepted, 30)
         self.assertEqual(self.node._command_status(self.now), "nonzero_command_sent")
@@ -461,7 +490,8 @@ class NodeTests(unittest.TestCase):
                 break
         self.assertIsNotNone(first_zero)
         self.assertIsNotNone(first_negative)
-        self.assertGreaterEqual(first_negative - first_zero, .20)
+        self.assertGreaterEqual(first_negative - first_zero, self.node._motion.config.reversal_pause)
+        self.assertLessEqual(first_negative - first_zero, .15)
 
     def test_optional_stop_reset_does_not_replay_old_command(self):
         self.optional_node()

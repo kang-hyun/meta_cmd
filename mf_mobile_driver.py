@@ -18,18 +18,26 @@ import serial
 class MotionConfig:
     wheel_radius: float = 0.12
     wheel_separation: float = 0.70
-    max_linear_speed: float = 0.30
-    max_angular_speed: float = 0.50
+    max_linear_speed: float = 1.5
+    max_angular_speed: float = 1.0
     max_wheel_speed: float = 20.0
-    wheel_acceleration: float = 2.0
-    wheel_deceleration: float = 4.0
-    startup_duration: float = 0.8
-    startup_linear_speed: float = 0.08
-    startup_angular_speed: float = 0.20
-    reversal_pause: float = 0.20
+    wheel_acceleration: float = 30.0
+    wheel_deceleration: float = 30.0
+    startup_duration: float = 0.001
+    startup_linear_speed: float = 1.5
+    startup_angular_speed: float = 1.0
+    reversal_pause: float = 0.001
+    # Positive cancels a leftward curve in that travel direction. rad per metre.
+    forward_yaw_per_meter: float = 0.03
+    reverse_yaw_per_meter: float = 0.06
 
     def __post_init__(self):
+        trims = {"forward_yaw_per_meter", "reverse_yaw_per_meter"}
         for name, value in vars(self).items():
+            if name in trims:
+                if not math.isfinite(value):
+                    raise ValueError(f"{name} must be finite")
+                continue
             if not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be finite and > 0")
         if self.startup_linear_speed > self.max_linear_speed:
@@ -82,6 +90,10 @@ class CasterMotionProfile:
         scale = min(1.0, c.max_linear_speed / max(abs(linear), 1e-12),
                     c.max_angular_speed / max(abs(angular), 1e-12))
         linear, angular = linear * scale, angular * scale
+        if linear > 0.0:
+            angular -= c.forward_yaw_per_meter * linear
+        elif linear < 0.0:
+            angular -= c.reverse_yaw_per_meter * linear
         left = (linear - angular * c.wheel_separation / 2) / c.wheel_radius
         right = (linear + angular * c.wheel_separation / 2) / c.wheel_radius
         scale = min(1.0, c.max_wheel_speed / max(abs(left), abs(right), 1e-12))
