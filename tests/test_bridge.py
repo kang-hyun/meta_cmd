@@ -129,6 +129,12 @@ class ROSInterfaceTests(unittest.TestCase):
         class FakeNode:
             def __init__(self, name):
                 self.publisher_count = 2
+                self._clients = []
+            @property
+            def clients(self):
+                # rclpy Node exposes this as a read-only iterator (including Jazzy).
+                # A plain fake object hid the bridge's startup AttributeError.
+                yield from self._clients
             def create_publisher(self, kind, topic, qos):
                 pub = types.SimpleNamespace(topic_name='/robot/' + topic, values=[])
                 pub.publish = pub.values.append
@@ -142,6 +148,7 @@ class ROSInterfaceTests(unittest.TestCase):
                     client.calls.append(request)
                     return types.SimpleNamespace(done=lambda: True, result=lambda: types.SimpleNamespace(success=True, message='ok'))
                 client.call_async = call
+                self._clients.append(client)
                 outer.clients.append(client)
                 return client
             def create_timer(self, period, callback):
@@ -162,6 +169,12 @@ class ROSInterfaceTests(unittest.TestCase):
         self.patch.start()
         self.addCleanup(self.patch.stop)
         self.node = make_ros_node(self.core)
+
+    def test_ros_client_registry_is_preserved(self):
+        self.assertEqual(list(self.node.clients), self.clients)
+        self.assertEqual(len(self.clients), 4)
+        with self.assertRaises(AttributeError):
+            self.node.clients = {}
 
     def test_no_velocity_publisher_or_automatic_stop(self):
         for _ in range(4):

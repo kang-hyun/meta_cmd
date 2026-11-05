@@ -7,6 +7,7 @@ import math
 import mimetypes
 from pathlib import Path
 import secrets
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -173,7 +174,8 @@ def make_ros_node(core):
                 "cmd_vel_applied": self.create_subscription(Twist, "cmd_vel_applied", lambda m: core.update("applied", [m.linear.x, m.angular.z]), telemetry),
                 "driver_status": self.create_subscription(String, "driver_status", self.on_status, telemetry),
             }
-            self.clients = {name: self.create_client(Trigger, name) for name in ("driver_stop", "driver_reset", "lift_set_home", "lift_stop")}
+            # Node.clients is a read-only iterator owned by rclpy, not our name lookup.
+            self._service_clients = {name: self.create_client(Trigger, name) for name in ("driver_stop", "driver_reset", "lift_set_home", "lift_stop")}
             self.pending = {}
             self.graph_time = 0.
             self.timer = self.create_timer(.05, self.update)
@@ -195,7 +197,7 @@ def make_ros_node(core):
                 with core.lock:
                     core.publisher_count = self.count_publishers(self.telemetry_subs["cmd_vel"].topic_name)
                     core.graph_at = now
-                    core.services = {name: client.service_is_ready() for name, client in self.clients.items()}
+                    core.services = {name: client.service_is_ready() for name, client in self._service_clients.items()}
                 self.graph_time = now
             with core.lock:
                 jobs = list(core.jobs)
@@ -217,7 +219,7 @@ def make_ros_node(core):
                     except ControlError as error:
                         core.finish(job["id"], False, error)
                     continue
-                client = self.clients[job["name"]]
+                client = self._service_clients[job["name"]]
                 if not client.service_is_ready():
                     core.finish(job["id"], False, "서비스 연결이 끊겼어요")
                     continue
@@ -321,8 +323,13 @@ def main():
     try:
         import rclpy
         from rclpy.executors import ExternalShutdownException
-    except ImportError:
-        parser.error("ROS2 환경을 먼저 불러오세요: source /opt/ros/humble/setup.bash")
+    except ImportError as error:
+        parser.error(
+            f"ROS2 패키지를 불러올 수 없어요: {error}\n"
+            f"현재 Python: {sys.executable}\n"
+            "Jazzy: source /opt/ros/jazzy/setup.bash "
+            "(Humble 사용 시 /opt/ros/humble/setup.bash).\n"
+            "Ubuntu apt로 설치한 ROS2라면 가상환경을 종료하고 /usr/bin/python3로 실행하세요.")
     core = ConsoleCore(radius=args.wheel_radius, separation=args.wheel_separation, lift_max=args.lift_max_height)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_factory(core, Path(__file__).parent / "dist", args.port, secrets.token_urlsafe(32)))
     server.daemon_threads = True
@@ -331,7 +338,7 @@ def main():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     print(f"MF Robot Console: http://127.0.0.1:{args.port}")
-    print("주행 모니터링 / 동일 PC 전용 / 드라이버와 teleop을 별도 실행하세요")
+    print("주행 모니터링 / 동일 PC 전용 / 드라이버와 Nav2 또는 teleop을 별도 실행하세요")
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):

@@ -23,17 +23,19 @@
 
 기존 노드를 종료하고 **두 Python 파일을 함께** 교체하십시오. 두 파일은 같은 디렉터리에 있어야 합니다. 같은 포트를 사용하는 다른 프로그램을 함께 실행하지 마십시오. 이후 변경 이력은 Git으로 관리합니다.
 
-기존 설치 조건을 유지합니다: Python 3.10+, ROS2 Humble, `pyserial`, `rclpy`, `geometry_msgs`, `std_msgs`, `std_srvs`. `mf_mobile_base`, `mf_msgs`는 필요하지 않습니다.
+ROS2 Jazzy는 Ubuntu 24.04의 시스템 Python 3.12, Humble은 Ubuntu 22.04의 Python 3.10을 사용합니다. 필요한 패키지는 `pyserial`, `rclpy`, `geometry_msgs`, `std_msgs`, `std_srvs`입니다. `mf_mobile_base`, `mf_msgs`는 필요하지 않습니다.
+
+아래 실행 예시는 Jazzy 기준입니다. Humble 사용자는 `jazzy`를 `humble`로 바꾸십시오.
 
 ```bash
-sudo apt install python3-serial ros-humble-rclpy \
-  ros-humble-geometry-msgs ros-humble-std-msgs ros-humble-std-srvs
+sudo apt install python3-serial ros-jazzy-rclpy \
+  ros-jazzy-geometry-msgs ros-jazzy-std-msgs ros-jazzy-std-srvs
 ```
 
 포트 접근 권한이 없다면 `sudo usermod -aG dialout $USER` 후 다시 로그인합니다.
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 python3 mf_mobile_driver_node.py --ros-args \
   -p port:=/dev/ttyUSB0 \
   -p baudrate:=921600 \

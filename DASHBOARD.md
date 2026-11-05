@@ -1,11 +1,11 @@
 # MF Robot Console — 주행 모니터링
 
-주행 조작은 teleop 등 외부 프로그램에서 하고, 관제는 ROS2 명령·모터 피드백·드라이버 상태를 확인합니다. 관제에는 방향 버튼, 주행 속도 슬라이더, 주행 키보드 단축키가 없습니다.
+자율주행은 Nav2, 수동 주행은 teleop 등 외부 프로그램에서 하고, 관제는 ROS2 명령·모터 피드백·드라이버 상태를 확인합니다. 관제에는 방향 버튼, 주행 속도 슬라이더, 주행 키보드 단축키가 없습니다.
 
 ## 연결 구조
 
 - 드라이버: 시리얼 921600bps로 로봇 보드와 통신합니다.
-- teleop: `/cmd_vel`로 주행 명령을 보냅니다.
+- Nav2 / teleop: 자율주행 또는 수동 주행 명령을 `/cmd_vel`로 보냅니다.
 - 관제 브리지: `/cmd_vel`, `/cmd_vel_applied`, `/motor_state`, `/driver_status`를 구독합니다. **`/cmd_vel` 발행기를 만들지 않으며 0속도도 보내지 않습니다.**
 - 정지 유지·복구 버튼은 사용자가 눌렀을 때만 드라이버 서비스를 호출합니다. 기존 리프트 기능도 명시적 요청으로만 동작합니다.
 
@@ -13,7 +13,7 @@
 
 ## 실행
 
-Ubuntu / ROS2 Humble / Python 3.10 이상 기준입니다. 브리지는 Python 표준 라이브러리와 ROS2 패키지만 사용합니다. Node.js나 rosbridge를 설치할 필요가 없습니다.
+아래 명령은 Ubuntu 24.04 / ROS2 Jazzy / 시스템 Python 3.12 기준입니다. Humble 사용자는 명령의 `jazzy`를 `humble`로 바꾸십시오. 브리지는 Python 표준 라이브러리와 ROS2 패키지만 사용합니다. Node.js나 rosbridge를 설치할 필요가 없습니다.
 
 처음 받는 경우:
 
@@ -27,14 +27,14 @@ cd meta_cmd
 필요한 패키지가 없다면:
 
 ```bash
-sudo apt install python3-serial ros-humble-rclpy \
-  ros-humble-geometry-msgs ros-humble-std-msgs ros-humble-std-srvs
+sudo apt install python3-serial ros-jazzy-rclpy \
+  ros-jazzy-geometry-msgs ros-jazzy-std-msgs ros-jazzy-std-srvs
 ```
 
 **터미널 1 — 드라이버**
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 cd /path/to/meta_cmd
 python3 mf_mobile_driver_node.py
 ```
@@ -44,14 +44,14 @@ python3 mf_mobile_driver_node.py
 **터미널 2 — 관제 브리지**
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 cd /path/to/meta_cmd
 python3 ros_dashboard_bridge.py
 ```
 
-같은 PC의 브라우저에서 **http://127.0.0.1:8765**를 엽니다. 별도 터미널에서 기존 teleop 프로그램을 실행해 `/cmd_vel`에 `geometry_msgs/msg/Twist`를 발행합니다. 드라이버·teleop·브리지의 ROS_DOMAIN_ID와 namespace를 맞추십시오.
+같은 PC의 브라우저에서 **http://127.0.0.1:8765**를 엽니다. 기존 Nav2 또는 수동 teleop에서 `/cmd_vel`에 `geometry_msgs/msg/Twist`를 발행합니다. 드라이버·주행 프로그램·브리지의 ROS_DOMAIN_ID와 namespace를 맞추십시오.
 
-드라이버의 기본 명령 타임아웃은 0.5초입니다. 주행 중에는 teleop이 명령을 지속적으로 발행해야 하며 10Hz 이상을 권장합니다. 키를 한 번 눌러 한 번만 발행하는 설정이면 주행이 중단될 수 있습니다. 실제 주행 종료·정지는 teleop과 드라이버의 설정에 따라 처리됩니다.
+드라이버의 기본 명령 타임아웃은 0.5초입니다. 주행 중에는 Nav2 또는 teleop이 명령을 지속적으로 발행해야 하며 10Hz 이상을 권장합니다. 키를 한 번 눌러 한 번만 발행하는 설정이면 주행이 중단될 수 있습니다. 실제 주행 종료·정지는 주행 프로그램과 드라이버의 설정에 따라 처리됩니다.
 
 브리지는 localhost에만 연결합니다. 별도 PC에서는 기존 SSH 접속으로 터널을 만들 수 있습니다.
 
@@ -60,6 +60,19 @@ ssh -N -L 8765:127.0.0.1:8765 robot_user@ROBOT_IP
 ```
 
 터널을 연 PC에서 http://127.0.0.1:8765를 엽니다. 관제 브리지 포트를 바꾸면 터널의 포트도 맞춥니다.
+
+## 시작 오류 확인
+
+- `AttributeError: property 'clients' ... has no setter`: 이전 브리지의 ROS2 노드 속성 충돌입니다. 최신 `main`을 받은 뒤 브리지를 다시 실행하십시오. 수정본은 서비스 연결 목록을 `_service_clients`에 저장합니다.
+- `No module named 'rclpy'` 또는 `_rclpy_pybind11` 관련 오류: 새 터미널에서 Jazzy 환경을 불러오고 위 의존성을 설치했는지 확인하십시오. Conda/venv의 Python 대신 Ubuntu 시스템 Python으로 실행할 수 있습니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+/usr/bin/python3 ros_dashboard_bridge.py
+```
+
+- `Address already in use`: 같은 포트에 기존 브리지가 실행 중인지 확인하십시오. 필요하면 `--port 8766`으로 실행하고 브라우저에서도 `http://127.0.0.1:8766`을 사용합니다.
+- 오류가 계속되면 실행한 명령과 `Traceback`부터 마지막 줄까지의 오류를 함께 확인하십시오.
 
 ## 화면 값
 
@@ -87,7 +100,7 @@ python3 ros_dashboard_bridge.py --wheel-radius 0.12 --wheel-separation 0.70
 ## 정지 유지·복구·리프트
 
 - **정지 유지**: `/driver_stop` 호출. 드라이버가 정지 상태를 유지합니다.
-- **복구**: `/driver_reset` 호출. 복구 전에 외부 teleop 명령을 멈추고 바퀴 정지와 장애 해소를 확인하십시오. 외부 프로그램이 계속 명령을 보내면 복구 후 그 새 명령으로 다시 움직일 수 있습니다.
+- **복구**: `/driver_reset` 호출. 복구 전에 Nav2 목표를 취소하거나 외부 teleop 명령을 멈추고 바퀴 정지와 장애 해소를 확인하십시오. 외부 프로그램이 계속 명령을 보내면 복구 후 그 새 명령으로 다시 움직일 수 있습니다.
 - **리프트**: 기존 HOME·목표 높이·정지 기능을 유지합니다. 드라이버의 `enable_lift`, `lift_max_height`와 브리지의 `--lift-max-height`를 맞추어야 합니다. 이동 중에는 조작을 거부하며, 작업 중 외부 주행 명령을 보내지 마십시오.
 
 서비스는 비동기로 호출합니다. 실패를 성공으로 표시하지 않으며, 응답이 3초 넘게 없으면 실행 여부 미확인으로 표시합니다. 자동 재시도하지 않고 기존 결과가 확인될 때까지 같은 서비스의 중복 호출을 막습니다. HOME 응답은 요청 접수이고 실제 완료는 리프트 피드백으로 확인합니다.
@@ -119,4 +132,4 @@ python3 ros_dashboard_bridge.py --ros-args -r cmd_vel:=/robot1/velocity
 python3 -m unittest discover -s tests -q
 ```
 
-드라이버 모의 시험 49개와 관제 모의 시험 22개, 총 71개를 통과했습니다. 관제 시험은 cmd_vel 발행기 부재, 외부 명령 구독, 복수 발행기·피드백 중단 시 자동 정지 요청 부재, 명시적 서비스 호출, 폐기된 주행 HTTP 경로 차단을 포함합니다. 실제 ROS2/DDS와 로봇 통합 시험은 별도입니다.
+드라이버 모의 시험 49개와 관제 모의 시험 23개, 총 72개를 통과했습니다. 관제 시험은 cmd_vel 발행기 부재, 외부 명령 구독, 복수 발행기·피드백 중단 시 자동 정지 요청 부재, 명시적 서비스 호출, 폐기된 주행 HTTP 경로 차단을 포함합니다. Jazzy의 `rclpy.Node.clients` 읽기 전용 속성과 같은 제약을 모의 노드에 적용해 시작 오류를 재현하고 수정 후 통과를 확인했습니다. 실제 ROS2 Jazzy/DDS와 로봇 통합 시험은 별도입니다.
