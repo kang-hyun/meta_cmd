@@ -1,3 +1,12 @@
+> **`low_temp` 브랜치의 새 로봇 드라이버**
+>
+> `mobile_keti_261109.zip` 기준 드라이버는 **[low_temp_driver/](low_temp_driver/README.md)**에 있습니다.
+> 반지름 **0.15 m**, 휠 간격 **0.60 m**, 통신 **500000 baud**, 호스트 출발 제한 없음.
+> 실행: `cd low_temp_driver` 후 `python3 low_temp_driver_node.py --ros-args --params-file config/low_temp_driver.yaml`
+> 설치·ROS 토픽·검사·펌웨어 동작은 [새 드라이버 안내](low_temp_driver/README.md)를 따르십시오.
+>
+> 아래 문서는 이 브랜치에 원래 있던 이전 드라이버 안내입니다. 새 로봇에는 위 폴더의 코드를 사용하십시오.
+
 # MF 모바일 드라이버 — 중앙 구동륜 + 수동 캐스터 보완본
 
 작성일: 2026-10-29
